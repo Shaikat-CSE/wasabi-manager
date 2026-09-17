@@ -182,6 +182,7 @@ def plan_sync(
                 "action": "unchanged" if remote_hash == local_hash else "upload",
                 "key": key,
                 "bytes": size,
+                "sha256": local_hash,
                 "reason": "sha256-match"
                 if remote_hash == local_hash
                 else "checksum-missing-or-changed",
@@ -213,38 +214,75 @@ def execute(
     completed_counter = 0
     total = len(plan)
 
-    def one(item: dict[str, Any]) -> dict[str, Any]:
+    uploads = [item for item in plan if item["action"] == "upload"]
+    deletes = [item for item in plan if item["action"] == "delete"]
+    others = [item for item in plan if item["action"] not in {"upload", "delete"}]
+    results: list[dict[str, Any]] = []
+
+    # 1. Execute uploads concurrently
+    def one_upload(item: dict[str, Any]) -> dict[str, Any]:
         nonlocal completed_counter
         try:
-            if item["action"] == "upload":
-                path, _ = objects[item["key"]]
-                client.upload_file(
-                    str(path),
-                    target.bucket,
-                    item["key"],
-                    ExtraArgs={
-                        "ContentType": mimetypes.guess_type(path.name)[0]
-                        or "application/octet-stream",
-                        "Metadata": {"sha256": sha256(path)},
-                    },
-                )
-                res = {**item, "action": "uploaded"}
-            elif item["action"] == "delete":
-                client.delete_object(Bucket=target.bucket, Key=item["key"])
-                res = {**item, "action": "deleted"}
-            else:
-                res = item
+            path, _ = objects[item["key"]]
+            file_hash = item.get("sha256") or sha256(path)
+            client.upload_file(
+                str(path),
+                target.bucket,
+                item["key"],
+                ExtraArgs={
+                    "ContentType": mimetypes.guess_type(path.name)[0]
+                    or "application/octet-stream",
+                    "Metadata": {"sha256": file_hash},
+                },
+            )
+            res = {**item, "action": "uploaded", "sha256": file_hash}
         except Exception as exc:
             res = {**item, "action": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
         completed_counter += 1
         if progress_callback:
-            stage_name = "Uploading files" if item.get("action") == "upload" else "Deleting orphan files" if item.get("action") == "delete" else "Transferring"
-            progress_callback(completed_counter, total, item.get("key", ""), stage_name)
+            progress_callback(completed_counter, total, item.get("key", ""), "Uploading files")
         return res
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(one, plan))
+    if uploads:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            results.extend(pool.map(one_upload, uploads))
+
+    # 2. Execute deletes in high-performance batches (up to 1,000 keys per S3 API call)
+    batch_size = 1000
+    for i in range(0, len(deletes), batch_size):
+        chunk = deletes[i : i + batch_size]
+        batch_keys = [{"Key": item["key"]} for item in chunk]
+        try:
+            response = client.delete_objects(
+                Bucket=target.bucket,
+                Delete={"Objects": batch_keys, "Quiet": False},
+            )
+            deleted_keys = {d["Key"] for d in response.get("Deleted", [])}
+            error_map = {e["Key"]: e.get("Message", "DeleteFailed") for e in response.get("Errors", [])}
+            for item in chunk:
+                key = item["key"]
+                if key in error_map:
+                    results.append({**item, "action": "failed", "error": error_map[key]})
+                else:
+                    results.append({**item, "action": "deleted"})
+        except Exception as exc:
+            # Fallback to individual deletions if bulk delete fails
+            for item in chunk:
+                try:
+                    client.delete_object(Bucket=target.bucket, Key=item["key"])
+                    results.append({**item, "action": "deleted"})
+                except Exception as sub_exc:
+                    results.append({**item, "action": "failed", "error": f"{type(sub_exc).__name__}: {sub_exc}"})
+
+        completed_counter += len(chunk)
+        if progress_callback:
+            last_key = chunk[-1].get("key", "") if chunk else ""
+            progress_callback(completed_counter, total, last_key, "Deleting orphan files")
+
+    # 3. Add unchanged/other items
+    results.extend(others)
+    return sorted(results, key=lambda item: (item["key"], item["action"]))
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:

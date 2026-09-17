@@ -25,6 +25,13 @@ wheels/
 .installed.cfg
 *.egg
 
+# Compiled desktop executables & PyInstaller artifacts
+*.exe
+*.dll
+*.pyd
+*.spec.bak
+
+
 # Virtual environments
 venv/
 .venv/

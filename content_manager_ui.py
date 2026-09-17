@@ -11,12 +11,29 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import sys
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
 
 import bucket_manager
+
+def get_bundle_dir() -> Path:
+    """Return the base directory for assets, supporting PyInstaller bundles."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+def load_app_env() -> None:
+    """Load .env from the executable directory if frozen, or current workspace."""
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        env_file = exe_dir / ".env"
+        if env_file.is_file():
+            load_dotenv(env_file)
+            return
+    load_dotenv()
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.RLock()
@@ -81,7 +98,7 @@ def start_job(payload: dict[str, Any]) -> dict[str, Any]:
     return {"job_id": job_id, "state": "queued", "stage": "Queued", "progress": 0}
 
 def load_page() -> str:
-    return Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
+    return (get_bundle_dir() / "dashboard.html").read_text(encoding="utf-8")
 
 
 LOCK_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -192,7 +209,7 @@ def make_handler(token: str) -> type[BaseHTTPRequestHandler]:
                     self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
             if urlparse(self.path).path == "/modern.css":
-                encoded = Path(__file__).with_name("dashboard-modern.css").read_bytes()
+                encoded = (get_bundle_dir() / "dashboard-modern.css").read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/css; charset=utf-8")
                 self.send_header("Content-Length", str(len(encoded)))
@@ -256,7 +273,7 @@ def main() -> None:
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
-    load_dotenv()
+    load_app_env()
     token = args.token or secrets.token_urlsafe(24)
     url = f"http://127.0.0.1:{args.port}/?token={token}"
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(token))

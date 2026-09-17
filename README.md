@@ -52,6 +52,34 @@ python content_manager_ui.py --token mytoken   # Fixed session token
 
 ---
 
+## Standalone Desktop App (Portable .EXE)
+
+You can run Wasabi Manager as a native desktop application (powered by Windows Edge WebView2) without needing a terminal or browser tab.
+
+### Running in Development
+```bash
+python desktop_app.py
+```
+
+### Building the Portable Windows Executable
+To build a self-contained, portable single-file `.exe` (~34 MB):
+
+```bash
+python build_exe.py
+```
+This produces `dist/WasabiManager.exe`.
+
+### Distributing the Portable App
+Simply distribute `WasabiManager.exe` with a `.env` file containing your Wasabi credentials in the same directory:
+```text
+MyFolder/
+├── WasabiManager.exe    # Standalone double-clickable app
+└── .env                 # Wasabi API credentials
+```
+The application automatically detects the `.env` file placed next to the executable.
+
+---
+
 ## Command-Line Operations (`manage_content.py`)
 
 For automated environments, `manage_content.py` provides scoped operations with dry-run planning:
@@ -82,6 +110,9 @@ python manage_content.py delete --prefix html_books/subject --execute --confirm-
 
 ```text
 wasabi-manager/
+├── desktop_app.py             # Native desktop app runner (pywebview / Edge WebView2)
+├── build_exe.py               # Standalone PyInstaller build script
+├── WasabiManager.spec         # PyInstaller packaging configuration
 ├── bucket_manager.py          # Core S3 operations, diff engine & progress callbacks
 ├── content_manager_ui.py      # Local HTTP server, API endpoints & job queue
 ├── dashboard.html             # High-performance SPA frontend

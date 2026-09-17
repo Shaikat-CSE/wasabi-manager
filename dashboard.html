@@ -774,7 +774,8 @@ function syncModalFields() {
   $('#modalIcon').innerHTML = meta.icon;
   $('#modalTitle').textContent = meta.title;
   $('#modalSubtitle').textContent = meta.desc;
-  $('#confirmNeedCode').textContent = $('#opPrefix').value || '[root]';
+  const currentVal = $('#opPrefix').value.trim();
+  $('#confirmNeedCode').textContent = currentVal || '(Prefix required)';
 
   const submitBtn = $('#btnExecuteSubmit');
   if (isExec) {
@@ -792,7 +793,7 @@ function syncModalFields() {
 }
 
 $('#opPrefix').addEventListener('input', (e) => {
-  $('#confirmNeedCode').textContent = e.target.value || '[root]';
+  $('#confirmNeedCode').textContent = e.target.value.trim() || '(Prefix required)';
 });
 $('#opExecute').addEventListener('change', syncModalFields);
 $('#opDeleteMirror').addEventListener('change', syncModalFields);
@@ -806,7 +807,13 @@ async function submitActionForm(event) {
   const confirmPrefix = $('#opConfirmInput').value.trim();
 
   const isDelete = op === 'delete' || (op === 'sync' && $('#opDeleteMirror').checked);
-  if (execute && isDelete && confirmPrefix !== prefix) {
+  if (isDelete && !prefix) {
+    toast('Mutating deletion requires an explicit prefix (cannot delete entire bucket root)', 'error');
+    $('#opPrefix').focus();
+    return;
+  }
+
+  if (execute && isDelete && (!confirmPrefix || confirmPrefix !== prefix)) {
     toast('Confirmation prefix does not match!', 'error');
     $('#opConfirmInput').focus();
     return;
@@ -830,6 +837,11 @@ async function submitActionForm(event) {
 }
 
 async function startBackgroundJob(payload) {
+  if (state.pollTimer) {
+    clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+  }
+
   const drawer = $('#resultsDrawer');
   drawer.style.display = 'block';
   $('#drawerPill').className = 'drawer-status-pill running';
