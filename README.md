@@ -1,96 +1,106 @@
-# Sugarclass Uploaders
+# Wasabi Manager (`wasabi-manager`)
 
-Two separate uploaders for different content types and buckets.
+Enterprise-grade cloud storage orchestrator and management console for Wasabi S3 buckets (`sugarclass.app` and `sugarclass-shared`).
 
-## Reels Uploader
+![Wasabi Manager UI](https://img.shields.io/badge/UI-Wasabi%20Green-059669?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square)
+![License](https://img.shields.io/badge/License-Proprietary-gray?style=flat-square)
 
-Uploads mobile reel assets (videos, audio, subtitles, images) to the `sugarclass-shared` bucket.
+---
 
+## Highlights & Features
+
+- **Modern Web Console**: Single-page application designed with an enterprise Wasabi-green theme, custom vector iconography, and high contrast typography (Plus Jakarta Sans & JetBrains Mono).
+- **Dual-Bucket Support**: Instantly switch between `sugarclass.app` (Content/Textbooks) and `sugarclass-shared` (Reels/Media).
+- **Real-Time Progress Tracking**: Background task execution with real-time transfer percentage, active stage description, and live file ticker.
+- **Safety First**:
+  - All write actions default to a non-destructive **Dry-Run Plan**.
+  - Destructive purges require typing the exact prefix name to authorize.
+  - Deletions automatically return your view to the parent folder.
+- **Remote Log Purge**: Built-in tool to inspect and batch delete Wasabi server access logs (`.log-*`), instantly freeing gigabytes of cloud storage.
+- **Full CLI & Automation Support**: Headless CLI scripts for CI/CD and automation pipelines.
+
+---
+
+## Quick Start (Interactive UI)
+
+1. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Configure environment**:
+   Copy `.env.example` to `.env` and enter your Wasabi API credentials:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Launch the Console**:
+   ```bash
+   python content_manager_ui.py
+   ```
+   * The server runs on `http://127.0.0.1:8765`.
+   * Automatically opens your default browser with a one-time session token.
+   * Press `Ctrl+C` in the terminal to stop.
+
+### CLI Flags for the UI
 ```bash
-python upload_reels.py              # Dry-run
-python upload_reels.py --upload     # Upload
+python content_manager_ui.py --no-browser     # Don't auto-open browser
+python content_manager_ui.py --port 9000      # Custom port
+python content_manager_ui.py --token mytoken   # Fixed session token
 ```
 
-**Destination:** `s3://sugarclass-shared/reels/`
+---
 
-**Source:** `C:\Synologysugar\Ragmaterials\shorts`
+## Command-Line Operations (`manage_content.py`)
 
-## Content Uploader
-
-Uploads textbook/exam content (HTML, images, metadata) to the `sugarclass.app` bucket.
+For automated environments, `manage_content.py` provides scoped operations with dry-run planning:
 
 ```bash
-python upload_content.py              # Dry-run
-python upload_content.py --upload     # Upload
-```
-
-**Destination:** `s3://sugarclass.app/sugarclass.app/aimaterials/html_books/{subject_id}/`
-
-**Source:** `C:\SynologyDrive\coding\coding\QNAbuild\outputs\CIE Biology (0610)-uploadable`
-
-## Content Bucket Manager
-
-`manage_content.py` manages a *scoped prefix* in `sugarclass.app`. It uses the
-content credentials, defaults to a dry-run, and writes a JSON plan/report. It
-never operates on the bucket root. All mutations require `--execute`.
-
-```bash
-# Inspect the current production content tree (read-only)
+# 1. Inspect remote objects
 python manage_content.py list --prefix html_books
 
-# Add or replace local files, but never remove remote files
-python manage_content.py upload --source "C:\path\to\content" --prefix html_books/igcse_cie_biology_0610 --execute
+# 2. Plan upload (Dry-run by default)
+python manage_content.py upload --source "C:\path\to\content" --prefix html_books/subject
 
-# Mirror a local directory to one subject. First run plans only.
-python manage_content.py sync --source "C:\path\to\content" --prefix html_books/igcse_cie_biology_0610
+# 3. Execute upload
+python manage_content.py upload --source "C:\path\to\content" --prefix html_books/subject --execute
 
-# Execute that mirror and remove remote files that are no longer local.
-# Repeating the prefix is an intentional deletion guard.
-python manage_content.py sync --source "C:\path\to\content" --prefix html_books/igcse_cie_biology_0610 --delete --execute --confirm-prefix html_books/igcse_cie_biology_0610
+# 4. Mirror sync with orphan pruning (deletes remote files absent locally)
+python manage_content.py sync --source "C:\path\to\content" --prefix html_books/subject --delete --execute --confirm-prefix html_books/subject
 
-# Plan or execute deletion of a scoped remote prefix.
-python manage_content.py delete --prefix html_books/igcse_cie_biology_0610
-python manage_content.py delete --prefix html_books/igcse_cie_biology_0610 --execute --confirm-prefix html_books/igcse_cie_biology_0610
+# 5. Download remote prefix locally
+python manage_content.py download --prefix html_books/subject --destination "C:\backups\subject" --execute
 
-# Download a remote prefix to local storage; existing same-size files are skipped.
-python manage_content.py download --prefix html_books/igcse_cie_biology_0610 --destination "C:\backups\biology" --execute
+# 6. Delete remote prefix
+python manage_content.py delete --prefix html_books/subject --execute --confirm-prefix html_books/subject
 ```
 
-For uploads and syncs, the manager stores a SHA-256 checksum as S3 object metadata. It
-therefore detects same-size content changes; existing objects without that metadata are
-uploaded once during the first sync.
+---
 
-### Local UI
+## Project Structure
 
-For a browser interface that manages both `sugarclass.app` and `sugarclass-shared`, run:
+```text
+wasabi-manager/
+├── bucket_manager.py          # Core S3 operations, diff engine & progress callbacks
+├── content_manager_ui.py      # Local HTTP server, API endpoints & job queue
+├── dashboard.html             # High-performance SPA frontend
+├── dashboard-modern.css       # Wasabi-green enterprise design system
+├── manage_content.py          # CLI content management tool
+├── upload_content.py          # Content upload pipeline script
+├── upload_reels.py            # Reels/video asset upload pipeline script
+├── requirements.txt           # Python dependencies
+├── .env.example               # Environment template
+└── tests/
+    ├── test_content_manager_ui.py
+    └── test_manage_content.py
+```
 
+---
+
+## Running Tests
+
+Verify the system with pytest:
 ```bash
-python content_manager_ui.py
+python -m pytest test_content_manager_ui.py test_manage_content.py -v
 ```
-
-It opens a token-protected page bound only to `127.0.0.1`. The UI has the same
-dry-run, `--execute`, and exact-prefix deletion protections as the command-line manager.
-Stop it with `Ctrl+C` in the terminal.
-
-## Configuration
-
-Copy `.env.example` to `.env` and fill in credentials for each bucket:
-
-| Variable | Bucket | Purpose |
-|----------|--------|---------|
-| `CONTENT_ACCESS_KEY` | sugarclass.app | Content uploads |
-| `CONTENT_SECRET_KEY` | sugarclass.app | Content uploads |
-| `REELS_ACCESS_KEY` | sugarclass-shared | Reel uploads |
-| `REELS_SECRET_KEY` | sugarclass-shared | Reel uploads |
-
-## Reports
-
-Reports are written to `reports/` folder:
-- `reports/reels-upload.json` - Reels upload report
-- `reports/content-upload.json` - Content upload report
-
-## Safety
-
-- Both scripts default to dry-run mode (no upload without `--upload` flag)
-- Skips files if remote size matches local (unless `--force`)
-- Never deletes local or remote files
