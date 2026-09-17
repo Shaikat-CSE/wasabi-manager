@@ -780,11 +780,39 @@ button, input, select, textarea {
   margin-left: 0.35rem;
 }
 
-.btn-table-danger:hover {
-  color: #b91c1c !important;
-  border-color: #b91c1c !important;
-  background-color: #fef2f2 !important;
+.btn-sync-quick {
+  background-color: var(--wasabi-subtle);
+  color: var(--wasabi-dark);
+  border: 1px solid rgba(5, 150, 105, 0.35);
+  font-weight: 700;
 }
+
+.btn-sync-quick:hover {
+  background-color: var(--wasabi-primary);
+  color: #ffffff;
+  border-color: var(--wasabi-primary);
+}
+
+.btn-sync-quick svg {
+  transition: transform 0.25s ease;
+}
+
+.btn-sync-quick:hover svg {
+  transform: rotate(90deg);
+}
+
+.btn-table-sync {
+  color: var(--wasabi-primary);
+  border-color: rgba(5, 150, 105, 0.3);
+  margin-left: 0.35rem;
+}
+
+.btn-table-sync:hover {
+  background-color: var(--wasabi-subtle);
+  border-color: var(--wasabi-primary);
+  color: var(--wasabi-dark);
+}
+
 
 /* Empty & Loading States */
 .table-empty, .table-loading {
@@ -1020,10 +1048,64 @@ button, input, select, textarea {
   padding: 0.65rem;
 }
 
-.empty-log-state {
-  text-align: center;
-  padding: 2.25rem;
+.drawer-tab-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border-medium);
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.drawer-tab-btn.active {
+  background-color: var(--wasabi-subtle);
+  color: var(--wasabi-dark);
+  border-color: var(--wasabi-primary);
+}
+
+.live-log-console {
+  background-color: #0f172a;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  border-radius: var(--radius-md);
+  padding: 1rem 1.2rem;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid #1e293b;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.live-log-line {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.1rem 0;
+  word-break: break-all;
+}
+
+.live-log-line:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.live-log-prefix {
+  color: #38bdf8;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.live-log-text {
+  color: #f1f5f9;
+}
+
+.live-log-text.highlight {
+  color: var(--wasabi-light);
+  font-weight: 600;
+}
+
 }
 
 .log-check {

@@ -50,6 +50,7 @@ def start_job(payload: dict[str, Any]) -> dict[str, Any]:
             "completed": 0,
             "total": 0,
             "current_file": "",
+            "logs": ["Task queued in background executor..."],
             "summary": {}
         }
 
@@ -57,24 +58,37 @@ def start_job(payload: dict[str, Any]) -> dict[str, Any]:
         pct = int((completed / total) * 100) if total > 0 else 50
         with JOBS_LOCK:
             if job_id in JOBS:
+                logs = JOBS[job_id].get("logs", [])
+                if current_file:
+                    log_entry = f"[{completed}/{total}] {stage}: {current_file}"
+                    if not logs or logs[-1] != log_entry:
+                        logs.append(log_entry)
+                        if len(logs) > 300:
+                            logs = logs[-300:]
                 JOBS[job_id].update(
                     state="running",
                     stage=stage,
                     progress=min(pct, 99),
                     completed=completed,
                     total=total,
-                    current_file=current_file
+                    current_file=current_file,
+                    logs=logs
                 )
 
     def work() -> None:
         with JOBS_LOCK:
             JOBS[job_id].update(state="running", stage="Connecting to storage...", progress=5)
+            JOBS[job_id].setdefault("logs", []).append("Connected to Wasabi S3 endpoint. Authenticating...")
         try:
             with JOBS_LOCK:
                 JOBS[job_id].update(stage="Scanning files and building diff...", progress=20)
+                JOBS[job_id]["logs"].append("Scanning local directory and querying remote objects for diff...")
             payload_with_callback = {**payload, "progress_callback": update_progress}
             result = run_operation(payload_with_callback)
             with JOBS_LOCK:
+                summary = result.get("summary", {})
+                summary_str = ", ".join(f"{k}: {v}" for k, v in sorted(summary.items())) if summary else "done"
+                JOBS[job_id]["logs"].append(f"Operation finished successfully ({summary_str}).")
                 JOBS[job_id].update(
                     state="complete",
                     stage="Complete",
@@ -83,10 +97,11 @@ def start_job(payload: dict[str, Any]) -> dict[str, Any]:
                     total=result.get("item_count", 0),
                     current_file="",
                     result=result,
-                    summary=result.get("summary", {})
+                    summary=summary
                 )
         except Exception as exc:
             with JOBS_LOCK:
+                JOBS[job_id].setdefault("logs", []).append(f"ERROR: {type(exc).__name__}: {exc}")
                 JOBS[job_id].update(
                     state="failed",
                     stage="Failed",

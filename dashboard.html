@@ -120,6 +120,10 @@
           <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           <span>Refresh</span>
         </button>
+        <button class="btn btn-sync-quick" id="btnQuickSync" onclick="triggerQuickSync()" title="1-Click Sync Local Directory to Current Prefix">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <span>Sync Now</span>
+        </button>
         <button class="btn btn-primary" onclick="openActionModal('upload')">
           <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           <span>Run Action</span>
@@ -215,6 +219,8 @@
         </div>
         <div class="drawer-controls">
           <div class="summary-chips" id="summaryChips"></div>
+          <button class="drawer-tab-btn active" id="tabLogsBtn" onclick="switchDrawerTab('logs')">Live Logs</button>
+          <button class="drawer-tab-btn" id="tabResultsBtn" onclick="switchDrawerTab('results')">Summary Table</button>
           <button class="btn-icon" onclick="document.getElementById('resultsDrawer').style.display='none'">
             <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
@@ -234,7 +240,17 @@
       </div>
 
       <div class="drawer-body">
-        <div class="operation-results-list" id="operationResultsList"></div>
+        <div id="drawerLogsView">
+          <div class="live-log-console" id="liveLogConsole">
+            <div class="live-log-line">
+              <span class="live-log-prefix">&gt;</span>
+              <span class="live-log-text">Ready to execute task...</span>
+            </div>
+          </div>
+        </div>
+        <div id="drawerResultsView" style="display: none;">
+          <div class="operation-results-list" id="operationResultsList"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -606,6 +622,7 @@ function renderTable(filterTerm = '') {
         <td class="date-cell text-secondary">—</td>
         <td class="action-cell">
           <button class="btn-table-action" onclick="event.stopPropagation(); navigateTo('${folder}')">Open</button>
+          <button class="btn-table-action btn-table-sync" onclick="event.stopPropagation(); triggerFolderSync('${folder}')" title="1-Click Sync Local Directory to this folder">Sync</button>
           <button class="btn-table-action btn-table-danger" onclick="event.stopPropagation(); triggerFolderDelete('${folder}')" title="Purge folder">Delete</button>
         </td>
       </tr>
@@ -661,6 +678,34 @@ function triggerFolderDelete(folderPrefix) {
   $('#confirmNeedCode').textContent = folderPrefix;
   syncModalFields();
 }
+
+function triggerFolderSync(folderPrefix) {
+  openActionModal('sync');
+  $('#opPrefix').value = folderPrefix;
+  // Auto-suggest local source from cached map if available
+  const savedSource = localStorage.getItem(`sync_source_${state.bucket}_${folderPrefix}`);
+  if (savedSource) {
+    $('#opSource').value = savedSource;
+  }
+  syncModalFields();
+}
+
+function triggerQuickSync() {
+  const current = state.currentPrefix;
+  if (!current) {
+    toast('Select a folder first or enter a prefix to sync', 'info');
+    openActionModal('sync');
+    return;
+  }
+  openActionModal('sync');
+  $('#opPrefix').value = current;
+  const savedSource = localStorage.getItem(`sync_source_${state.bucket}_${current}`);
+  if (savedSource) {
+    $('#opSource').value = savedSource;
+  }
+  syncModalFields();
+}
+
 
 // --- CLEAR LOGS WORKFLOW ---
 async function openClearLogsModal() {
@@ -832,6 +877,11 @@ async function submitActionForm(event) {
     confirmPrefix: confirmPrefix
   };
 
+  // Remember source path for this prefix if it was a sync/upload operation
+  if (['sync', 'upload'].includes(op) && payload.source && prefix) {
+    localStorage.setItem(`sync_source_${state.bucket}_${prefix}`, payload.source);
+  }
+
   closeActionModal();
   startBackgroundJob(payload);
 }
@@ -853,6 +903,13 @@ async function startBackgroundJob(payload) {
   $('#progressPct').textContent = '0%';
   $('#progressCurrentFile').textContent = '';
   $('#drawerBar').style.width = '0%';
+  switchDrawerTab('logs');
+  $('#liveLogConsole').innerHTML = `
+    <div class="live-log-line">
+      <span class="live-log-prefix">&gt;</span>
+      <span class="live-log-text highlight">Initializing ${payload.operation.toUpperCase()} task (${payload.execute ? 'Live Execution' : 'Safe Dry-Run'})...</span>
+    </div>
+  `;
   $('#operationResultsList').innerHTML = `
     <div class="table-loading">
       <div class="spinner"></div>
@@ -894,6 +951,18 @@ async function pollJobProgress() {
       $('#progressCurrentFile').textContent = `Transferring: ${job.current_file}`;
     } else {
       $('#progressCurrentFile').textContent = '';
+    }
+
+    // Render live streaming log lines
+    if (job.logs && Array.isArray(job.logs)) {
+      const consoleEl = $('#liveLogConsole');
+      consoleEl.innerHTML = job.logs.map(logLine => `
+        <div class="live-log-line">
+          <span class="live-log-prefix">&gt;</span>
+          <span class="live-log-text ${logLine.startsWith('ERROR:') ? 'text-danger' : logLine.includes('finished') ? 'highlight' : ''}">${escapeHtml(logLine)}</span>
+        </div>
+      `).join('');
+      consoleEl.scrollTop = consoleEl.scrollHeight;
     }
 
     if (job.state === 'running' || job.state === 'queued') {
@@ -994,6 +1063,20 @@ function renderOperationFailure(errMsg) {
       <div class="mono" style="font-size: 0.88rem; color: #991b1b;">${escapeHtml(errMsg)}</div>
     </div>
   `;
+}
+
+function switchDrawerTab(tabName) {
+  if (tabName === 'logs') {
+    $('#drawerLogsView').style.display = 'block';
+    $('#drawerResultsView').style.display = 'none';
+    $('#tabLogsBtn').classList.add('active');
+    $('#tabResultsBtn').classList.remove('active');
+  } else {
+    $('#drawerLogsView').style.display = 'none';
+    $('#drawerResultsView').style.display = 'block';
+    $('#tabLogsBtn').classList.remove('active');
+    $('#tabResultsBtn').classList.add('active');
+  }
 }
 
 // --- SETUP LISTENERS ---
