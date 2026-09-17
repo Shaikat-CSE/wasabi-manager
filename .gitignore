@@ -50,3 +50,9 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# Agent & IDE local caches/worktrees
+.kilo/
+.kilocode/
+.claude/
+
